@@ -73,6 +73,4 @@ The model generates real-time training metrics and saves figures to `outputs/fig
 - **Hybrid vs Classical**: Compare ROC-AUC and Accuracy.
 - **Quantum Advantage**: Analyze if the VQC layer improves embedding separation.
 
-## 📝 License
 
-MIT License
