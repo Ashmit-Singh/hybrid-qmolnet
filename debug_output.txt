@@ -1,0 +1,141 @@
+
+
+======================================================================
+   Hybrid QMolNet: Quantum-Classical Drug Molecule Prediction
+======================================================================
+
+Configuration:
+  Samples:      100
+  Epochs:       10
+  Batch size:   32
+  Train quantum:True
+  Output dir:   outputs
+
+[1/7] Importing modules...
+Random seed set to 42 for reproducibility
+Using CPU device
+
+[2/7] Preparing dataset...
+Generating synthetic dataset for demonstration...
+Dataset size: 100 molecules
+Class distribution: 50 positive, 50 negative
+
+Dataset splits:
+  Train: 69 molecules
+  Val:   16 molecules
+  Test:  15 molecules
+
+Processing training set...
+Processing 69 molecules...
+Building graphs:   0%|          | 0/69 [00:00<?, ?it/s]
+Building graphs: 100%|##########| 69/69 [00:00<00:00, 1501.94it/s]
+Successfully processed 69/69 molecules
+
+Processing validation set...
+Processing 16 molecules...
+
+Building graphs:   0%|          | 0/16 [00:00<?, ?it/s]
+Building graphs: 100%|##########| 16/16 [00:00<00:00, 1833.33it/s]
+Successfully processed 16/16 molecules
+
+Processing test set...
+Processing 15 molecules...
+
+Building graphs:   0%|          | 0/15 [00:00<?, ?it/s]
+Building graphs: 100%|##########| 15/15 [00:00<00:00, 1561.27it/s]
+Successfully processed 15/15 molecules
+Processing 100 molecules...
+
+Building graphs:   0%|          | 0/100 [00:00<?, ?it/s]
+Building graphs: 100%|##########| 100/100 [00:00<00:00, 1686.83it/s]
+C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\run_all.py:206: FutureWarning: The input object of type 'Tensor' is an array-like implementing one of the corresponding protocols (`__array__`, `__array_interface__` or `__array_struct__`); but not a sequence (or 0-D). In the future, this object will be coerced as if it was first converted using `np.array(obj)`. To retain the old behaviour, you have to either modify the type 'Tensor', or assign to an empty array created with `np.empty(correct_shape, dtype=object)`.
+  X_all = torch.tensor(np.array(train_descriptors), dtype=torch.float32)
+C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\run_all.py:206: VisibleDeprecationWarning: Creating an ndarray from ragged nested sequences (which is a list-or-tuple of lists-or-tuples-or ndarrays with different lengths or shapes) is deprecated. If you meant to do this, you must specify 'dtype=object' when creating the ndarray.
+  X_all = torch.tensor(np.array(train_descriptors), dtype=torch.float32)
+Traceback (most recent call last):
+  File "C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\run_all.py", line 453, in <module>
+Successfully processed 100/100 molecules
+
+Node feature dimension: 145
+
+[3/7] Training GNN Baseline...
+
+============================================================
+GNN Classifier Summary
+============================================================
+GNNClassifier(
+  node_features=145,
+  embedding_dim=32,
+  num_classes=2
+)
+------------------------------------------------------------
+Total parameters:     32,706
+Trainable parameters: 32,706
+============================================================
+
+
+============================================================
+Training GNN_Baseline
+============================================================
+Device: cpu
+Epochs: 10
+Train batches: 3
+Val batches: 1
+
+Epoch   1/10 | Train Loss: 0.6925 | Train Acc: 0.5072 | Val Loss: 0.6932 | Val Acc: 0.5000 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6932
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch0_val_loss_0.6932.pt
+Epoch   2/10 | Train Loss: 0.6921 | Train Acc: 0.5507 | Val Loss: 0.6932 | Val Acc: 0.5000 | Time: 0.0s
+  [EarlyStopping] No improvement for 1/10 epochs
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch1_val_loss_0.6932.pt
+Epoch   3/10 | Train Loss: 0.6802 | Train Acc: 0.6522 | Val Loss: 0.6931 | Val Acc: 0.5000 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6931
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch2_val_loss_0.6931.pt
+Epoch   4/10 | Train Loss: 0.6834 | Train Acc: 0.6522 | Val Loss: 0.6928 | Val Acc: 0.5000 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6928
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch3_val_loss_0.6928.pt
+Epoch   5/10 | Train Loss: 0.6719 | Train Acc: 0.6087 | Val Loss: 0.6926 | Val Acc: 0.5000 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6926
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch4_val_loss_0.6926.pt
+Epoch   6/10 | Train Loss: 0.6629 | Train Acc: 0.7246 | Val Loss: 0.6912 | Val Acc: 0.6875 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6912
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch5_val_loss_0.6912.pt
+Epoch   7/10 | Train Loss: 0.6416 | Train Acc: 0.7101 | Val Loss: 0.6885 | Val Acc: 0.6875 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6885
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch6_val_loss_0.6885.pt
+Epoch   8/10 | Train Loss: 0.6194 | Train Acc: 0.7101 | Val Loss: 0.6836 | Val Acc: 0.7500 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6836
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch7_val_loss_0.6836.pt
+Epoch   9/10 | Train Loss: 0.5775 | Train Acc: 0.7681 | Val Loss: 0.6745 | Val Acc: 0.8125 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6745
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch8_val_loss_0.6745.pt
+Epoch  10/10 | Train Loss: 0.5377 | Train Acc: 0.8696 | Val Loss: 0.6552 | Val Acc: 0.8125 | Time: 0.0s
+  [EarlyStopping] New best val_loss: 0.6552
+  [Checkpoint] Saved to outputs\checkpoints\checkpoint_epoch9_val_loss_0.6552.pt
+
+Training complete!
+Best validation loss: 0.6552 at epoch 10
+Best validation accuracy: 0.8125
+Training curves saved to outputs\figures\gnn_training.png
+
+[4/7] Training Descriptor MLP Baseline...
+Computing molecular descriptors...
+Descriptor stats - Count: 100
+First element type: <class 'torch.Tensor'>
+ERROR converting descriptors: can't convert np.ndarray of type numpy.object_. The only supported types are: float64, float32, float16, complex64, complex128, int64, int32, int16, int8, uint8, and bool.
+Item 0: <class 'torch.Tensor'> - tensor([78.1140,  1.6866,  0.0000,  0.0000,  0.0000,  0.0000,  1.0000,  0.0000,
+         6.0000,  1.0000])
+Item 1: <class 'torch.Tensor'> - tensor([106.1680,   2.3034,   0.0000,   0.0000,   0.0000,   0.0000,   1.0000,
+          0.2500,   8.0000,   1.0000])
+Item 2: <class 'torch.Tensor'> - tensor([59.0680, -0.5084,  1.0000,  1.0000, 43.0900,  0.0000,  0.0000,  0.5000,
+         4.0000,  0.0000])
+Item 3: <class 'torch.Tensor'> - tensor([61.0840, -1.0626,  2.0000,  2.0000, 46.2500,  1.0000,  0.0000,  1.0000,
+         4.0000,  0.0000])
+Item 4: <class 'torch.Tensor'> - tensor([137.1820,   0.8934,   2.0000,   2.0000,  46.2500,   2.0000,   1.0000,
+          0.2500,  10.0000,   1.0000])
+    main()
+  File "C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\run_all.py", line 213, in main
+    raise e
+  File "C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\run_all.py", line 206, in main
+    X_all = torch.tensor(np.array(train_descriptors), dtype=torch.float32)
+TypeError: can't convert np.ndarray of type numpy.object_. The only supported types are: float64, float32, float16, complex64, complex128, int64, int32, int16, int8, uint8, and bool.

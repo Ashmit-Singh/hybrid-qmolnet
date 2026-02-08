@@ -1,0 +1,43 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.11, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet
+collected 26 items
+
+tests\test_models.py ........                                            [ 30%]
+tests\test_quantum.py ......                                             [ 53%]
+tests\test_smiles.py ...F........                                        [100%]
+
+================================== FAILURES ===================================
+_____________________ TestSmilesParser.test_empty_smiles ______________________
+
+self = <hybrid_qmolnet.tests.test_smiles.TestSmilesParser object at 0x0000025513F06D10>
+
+    def test_empty_smiles(self):
+        """Test that empty SMILES returns None."""
+        data = smiles_to_graph('')
+>       assert data is None
+E       assert Data(x=[0], edge_index=[2, 0], edge_attr=[0, 6]) is None
+
+tests\test_smiles.py:53: AssertionError
+============================== warnings summary ===============================
+tests/test_models.py::TestGNNEncoder::test_encoder_initialization
+tests/test_models.py::TestGNNEncoder::test_encoder_initialization
+tests/test_models.py::TestGNNEncoder::test_encoder_initialization
+tests/test_models.py::TestGNNEncoder::test_encoder_initialization
+  C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\.venv\lib\site-packages\autograd\numpy\numpy_wrapper.py:20: DeprecationWarning: `np.int` is a deprecated alias for the builtin `int`. To silence this warning, use `int` by itself. Doing this will not modify any behavior and is safe. When replacing `np.int`, you may wish to use e.g. `np.int64` or `np.int32` to specify the precision. If you wish to review your current use, check the release note link for additional information.
+  Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+    int_types = {_np.int, _np.int8, _np.int16, _np.int32, _np.int64, _np.integer}
+
+tests/test_models.py::TestGNNEncoder::test_encoder_initialization
+  C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\.venv\lib\site-packages\pennylane\circuit_graph.py:22: DeprecationWarning: The retworkx package is deprecated and has been renamed to rustworkx. Rustworkx is a drop-in replacement and can be used by replacing `import retworkx` with import `rustworkx`. 
+    import retworkx as rx
+
+tests/test_quantum.py::TestQuantumLayer::test_layer_gradients
+tests/test_quantum.py::TestQuantumLayer::test_layer_gradients
+  C:\Users\ashmi\.gemini\antigravity\scratch\hybrid_qmolnet\.venv\lib\site-packages\semantic_version\base.py:600: PendingDeprecationWarning: The Spec() class will be removed in 3.1; use SimpleSpec() instead.
+    return Spec(spec).match(Version(version))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_smiles.py::TestSmilesParser::test_empty_smiles - assert Dat...
+================== 1 failed, 25 passed, 7 warnings in 13.90s ==================
