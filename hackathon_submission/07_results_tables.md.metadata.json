@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Results summary tables for Hybrid QMolNet hackathon submission. Includes formatted tables for model comparison metrics (accuracy, ROC-AUC, F1, precision, recall), parameter counts and training times, ablation study results, confusion matrices, training configuration summary, and statistical significance notes. Presentation-ready markdown formatting.",
+  "updatedAt": "2026-02-08T12:03:23.424715Z"
+}

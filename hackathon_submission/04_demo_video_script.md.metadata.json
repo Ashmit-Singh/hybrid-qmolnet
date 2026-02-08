@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Demo video narration script for Hybrid QMolNet (~3 minutes). Includes screen-by-screen instructions for what to show (terminal, code, plots, circuit diagrams) synchronized with narration text. Covers pipeline execution, training visualization, model comparison, embedding projections, and quantum circuit display. Timed segments with specific visual cues.",
+  "updatedAt": "2026-02-08T12:00:23.442362900Z"
+}

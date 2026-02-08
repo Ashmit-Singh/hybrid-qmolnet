@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Comprehensive technical report for Hybrid QMolNet hackathon submission. Covers problem motivation, GNN and quantum ML theory, methodology (graph construction, GNN encoder, VQC layer), architecture description with parameter counts, experimental setup, baseline comparisons, results tables showing 85.2% accuracy and 0.91 ROC-AUC, ablation studies, result analysis, current limitations, and future work directions. Written in conference-style technical tone with mathematical formulations and ASCII diagrams.",
+  "updatedAt": "2026-02-08T11:56:37.024035800Z"
+}

@@ -16,7 +16,7 @@ A research-grade implementation of a hybrid quantum-classical neural network for
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/your-username/hybrid-qmolnet.git
+    git clone https://github.com/Ashmit-Singh/hybrid-qmolnet.git
     cd hybrid-qmolnet
     ```
 

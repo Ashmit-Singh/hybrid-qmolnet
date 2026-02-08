@@ -1,0 +1,5 @@
+{
+  "artifactType": "ARTIFACT_TYPE_OTHER",
+  "summary": "Architecture diagrams for Hybrid QMolNet hackathon submission. Includes ASCII diagrams of full architecture, data pipeline, quantum circuit structure, component interaction, and mathematical flow. Also includes Python code using matplotlib and graphviz to generate publication-quality vector diagrams.",
+  "updatedAt": "2026-02-08T12:03:23.334276800Z"
+}
