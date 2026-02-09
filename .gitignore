@@ -1,41 +1,78 @@
+# Hybrid QMolNet - Git Ignore
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+.eggs/
 
 # Virtual Environment
 .venv/
 venv/
 ENV/
 env/
-.env
-
-# Project specific
-outputs/
-.gemini/
-.agent/
-brain/
-scratch/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+.spyderproject
+.spyproject
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Training Outputs (large files)
+outputs/
+outputs_*/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Figures (regeneratable)
+figures/
+*.png
+*.jpg
+*.jpeg
+*.svg
+!docs/*.png
+!assets/*.png
+
+# Data (download separately)
+data/*.csv
+data/*.xlsx
+!data/.gitkeep
+
+# Reports (regeneratable)
+reports/
+*.csv
+
+# Debug files
+debug_*.txt
+tests_output.txt
+
+# Temporary
+temp_*/
+tmp/
+*.tmp
+*.temp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Kaggle
+*.kaggle/
+
+# Cache
+.cache/
+*.cache
