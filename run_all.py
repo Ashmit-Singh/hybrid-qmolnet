@@ -58,6 +58,18 @@ def parse_args():
         '--output-dir', type=str, default='outputs',
         help='Output directory (default: outputs)'
     )
+    parser.add_argument(
+        '--data-path', type=str, default=None,
+        help='Path to CSV dataset (default: None, uses synthetic)'
+    )
+    parser.add_argument(
+        '--smiles-col', type=str, default='smiles',
+        help='Column name for SMILES (default: smiles)'
+    )
+    parser.add_argument(
+        '--label-col', type=str, default='label',
+        help='Column name for labels (default: label)'
+    )
     return parser.parse_args()
 
 
@@ -115,7 +127,13 @@ def main():
     # =========================================================================
     print("\n[2/7] Preparing dataset...")
     
-    smiles_list, labels = load_dataset(n_samples=args.samples, seed=SEED)
+    smiles_list, labels = load_dataset(
+        data_path=args.data_path,
+        smiles_col=args.smiles_col,
+        label_col=args.label_col,
+        n_samples=args.samples, 
+        seed=SEED
+    )
     
     train_loader, val_loader, test_loader, dataset = create_data_loaders(
         smiles_list, labels,

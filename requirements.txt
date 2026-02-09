@@ -177,3 +177,4 @@ websocket-client==1.8.0
 widgetsnbextension==4.0.14
 xxhash==3.6.0
 yarl==1.22.0
+streamlit>=1.28.0
