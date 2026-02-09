@@ -254,6 +254,8 @@ def create_data_loaders(
     batch_size: int = 32,
     seed: int = 42,
     compute_descriptors: bool = False,
+    use_cache: bool = True,
+    num_workers: int = 0,
 ) -> Tuple[PyGDataLoader, PyGDataLoader, PyGDataLoader, MoleculeDataset]:
     """
     Create train, validation, and test DataLoaders.
@@ -267,6 +269,8 @@ def create_data_loaders(
         batch_size: Batch size for DataLoaders
         seed: Random seed for reproducibility
         compute_descriptors: Whether to compute molecular descriptors
+        use_cache: Cache preprocessed graphs to disk
+        num_workers: DataLoader workers (0 for Windows compatibility)
     
     Returns:
         Tuple of (train_loader, val_loader, test_loader, full_dataset)
