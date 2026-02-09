@@ -1,192 +1,216 @@
 # Hybrid QMolNet
 
-**Hybrid Quantum-Classical Graph Neural Network for Molecular Property Prediction**
+**Hybrid Graph Neural Network with Variational Quantum Circuit for Molecular Property Prediction**
 
-A research-grade implementation combining Graph Neural Networks (GNNs) with Variational Quantum Circuits (VQCs) for drug discovery applications.
+---
+
+## Abstract
+
+Hybrid QMolNet is a research-oriented hybrid quantum–classical learning framework for molecular property prediction. The model integrates a graph neural network (GNN) molecular encoder with a variational quantum circuit (VQC) layer to study hybrid representation learning under near-term quantum (NISQ) constraints. Molecular structures are converted from SMILES strings into graphs, encoded via message-passing neural networks, compressed into qubit-compatible embeddings, and processed through a parameterized quantum circuit before final classification. The repository provides a complete, reproducible implementation including baselines, evaluation tooling, and an interactive demonstration interface.
+
+This project is intended for experimental and educational use and does not claim quantum computational advantage.
+
+---
+
+## Problem Setting
+
+Molecular property prediction is commonly formulated as a supervised learning problem where a model learns a mapping:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Hybrid QMolNet Architecture                │
-├─────────────────────────────────────────────────────────────┤
-│   SMILES ─▶ [Molecular Graph] ─▶ [GNN Encoder] ─▶ (32-dim) │
-│                                        │                    │
-│                                        ▼                    │
-│                              [Linear Compression]           │
-│                                        │                    │
-│                                        ▼                    │
-│                              [8-Qubit VQC] ◇────────────── │
-│                                        │    │ Angle Embed  │
-│                                        │    │ Var. Layers  │
-│                                        │    │ Measurements │
-│                                        ▼    └──────────────┘
-│                              [Classifier Head]              │
-│                                        │                    │
-│                                        ▼                    │
-│                                  Prediction                 │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+molecular structure → predicted property
 ```
 
-## 🚀 Features
+Graph neural networks are well-suited for this task because molecules naturally form graphs (atoms as nodes, bonds as edges). This project investigates whether inserting a shallow variational quantum circuit as a learnable nonlinear transformation layer on top of graph embeddings is practically trainable and performance-competitive within a hybrid pipeline.
 
-- **Hybrid Architecture**: GCN encoder + 8-qubit Variational Quantum Circuit (PennyLane)
-- **End-to-End Pipeline**: SMILES → Graph → GNN → VQC → Prediction
-- **Web Demo**: Interactive Streamlit application
-- **Model Comparison**: Toggle between hybrid and classical baselines
-- **Comprehensive Evaluation**: ROC-AUC, accuracy, confusion matrices
-- **Safe Scientific Language**: No exaggerated quantum claims
+The focus is on architectural feasibility and empirical behavior rather than quantum speedup claims.
 
-## 🛠️ Installation
+---
+
+## Method Overview
+
+The Hybrid QMolNet pipeline is:
+
+```
+SMILES → Molecular Graph → GNN Encoder → Embedding (32d)
+        → Linear Compression → Variational Quantum Circuit
+        → Classifier → Prediction
+```
+
+### Components
+
+**Graph Construction**
+
+* RDKit-based SMILES parsing
+* Atom-level feature vectors (~145 dimensions)
+* Bidirectional bond edges
+* PyTorch Geometric data objects
+
+**GNN Encoder**
+
+* Multi-layer graph convolution network
+* Message passing over molecular topology
+* Global pooling → fixed-length graph embedding
+
+**Compression Layer**
+
+* Linear projection from embedding dimension to qubit count
+* Normalization and bounded activation for angle encoding
+
+**Variational Quantum Circuit**
+
+* 8-qubit circuit implemented in PennyLane
+* Angle encoding of compressed features
+* Shallow entangling ansatz
+* Pauli expectation measurements
+* Parameter-shift gradient computation
+
+**Classifier Head**
+
+* Small classical MLP on quantum outputs
+
+The quantum circuit functions as a parameterized feature transformation layer, not a chemistry simulator.
+
+---
+
+## Baseline Models
+
+To isolate the effect of the quantum layer, the repository includes:
+
+* **GNN + MLP baseline** — identical graph encoder with purely classical head
+* **Descriptor + MLP baseline** — fixed molecular descriptors with MLP
+
+All models share comparable training and evaluation procedures.
+
+---
+
+## Implementation Details
+
+* Framework: PyTorch + PyTorch Geometric
+* Quantum simulation: PennyLane `default.qubit`
+* Chemistry toolkit: RDKit
+* Training: Adam/AdamW optimizers with early stopping
+* Metrics: Accuracy, ROC-AUC, F1, confusion matrix
+* Visualization: ROC curves, loss curves, embedding projections
+
+The quantum circuit depth and qubit count are intentionally limited to remain compatible with near-term hardware assumptions.
+
+---
+
+## Repository Structure
+
+```
+models/              Hybrid and baseline model definitions
+training/            Training loop and utilities
+evaluation/          Metrics and evaluation runners
+visualization/       Plotting and molecule visualization
+utils/               Data processing and formatting
+app.py               Streamlit demo interface
+run_all.py           End-to-end training entry point
+generate_report.py   Evaluation report generator
+tests/               Unit tests
+```
+
+---
+
+## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/Ashmit-Singh/hybrid-qmolnet.git
 cd hybrid-qmolnet
 
-# Create virtual environment
 python -m venv .venv
-.venv\Scripts\Activate.ps1  # Windows
-# source .venv/bin/activate  # Linux/Mac
-
-# Install dependencies
+.venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 ```
 
-## 🎮 Quick Start
+RDKit may require conda installation on some platforms.
 
-### Run Web Demo
+---
+
+## Reproducible Training
+
+Quick verification run:
+
 ```bash
-streamlit run app.py
-```
-
-This launches an interactive web interface where you can:
-- Enter any SMILES molecular string
-- Visualize the molecule structure
-- Get property predictions with confidence scores
-- Compare hybrid vs classical model outputs
-- View technical explanations of the pipeline
-
-### Train Models
-```bash
-# Quick verification (synthetic data)
 python run_all.py --quick
-
-# Full training
-python run_all.py --samples 500 --epochs 50 --batch_size 32
-
-# Train on BBBP dataset
-python run_all.py --data_path data/bbbp.csv --smiles_col smiles --label_col p_np --output_dir outputs_bbbp
 ```
 
-### Generate Reports
+Example training run:
+
+```bash
+python run_all.py \
+  --data_path data/bbbp.csv \
+  --smiles_col smiles \
+  --label_col p_np \
+  --epochs 50 \
+  --batch_size 32 \
+  --output_dir outputs_bbbp
+```
+
+---
+
+## Evaluation Outputs
+
+Training runs produce:
+
+* model checkpoints
+* ROC curves
+* confusion matrices
+* training loss plots
+* CSV and markdown metric summaries
+
+Reports can be regenerated with:
+
 ```bash
 python generate_report.py --output_dir outputs_bbbp
 ```
 
-### Run Tests
+---
+
+## Interactive Demonstration
+
+A lightweight Streamlit interface is provided for demonstration and testing:
+
 ```bash
-python -m pytest tests/ -v
+streamlit run app.py
 ```
 
-## 📂 Project Structure
+The demo supports:
 
-```
-hybrid-qmolnet/
-├── app.py                  # Streamlit web demo
-├── run_all.py              # Training pipeline runner
-├── generate_report.py      # Evaluation report generator
-│
-├── models/
-│   ├── hybrid_model.py     # HybridQMolNet (GNN + VQC)
-│   ├── gnn_encoder.py      # Graph Convolutional Network
-│   ├── quantum_layer.py    # Variational Quantum Circuit
-│   └── baselines.py        # Classical baselines
-│
-├── training/
-│   └── trainer.py          # Training loop
-│
-├── evaluation/
-│   ├── evaluator.py        # Model evaluation
-│   └── metrics.py          # Metric computation
-│
-├── visualization/
-│   ├── plots.py            # Training curves, ROC, confusion matrix
-│   ├── molecule_viz.py     # Molecule structure visualization
-│   └── embedding_viz.py    # Embedding projections
-│
-├── utils/
-│   ├── smiles_to_graph.py  # SMILES → PyG Data conversion
-│   ├── data_loader.py      # Dataset loading
-│   ├── formatters.py       # Prediction output formatting
-│   ├── explanation.py      # Technical explanations
-│   └── helpers.py          # Utility functions
-│
-├── tests/                  # Unit tests
-├── outputs/                # Training outputs
-└── data/                   # Datasets
-```
+* SMILES input
+* molecule visualization
+* hybrid vs classical model toggle
+* probability + text label output
+* technical explanation panel
 
-## 📊 Model Components
+---
 
-### Hybrid Model Pipeline
-1. **SMILES Parsing**: RDKit converts SMILES to molecule objects
-2. **Graph Construction**: Atoms → nodes (145 features), bonds → edges
-3. **GNN Encoding**: 3-layer GCN produces 32-dim molecular embedding
-4. **Compression**: Linear layer maps to 8 dimensions (qubit count)
-5. **Quantum Transform**: 8-qubit VQC with angle encoding and variational layers
-6. **Classification**: Final linear layer outputs class probabilities
+## Limitations
 
-### Baseline Models
-- **GNNClassifier**: Same GNN encoder with classical MLP head
-- **DescriptorMLP**: Pre-computed molecular descriptors + MLP
+* Quantum layer evaluated via classical simulation
+* Small qubit count and shallow circuit only
+* No claim of quantum computational advantage
+* Dataset scale may be limited by simulation cost
+* Performance gains, where observed, are empirical and task-dependent
 
-## 📈 Expected Outputs
+The GNN encoder provides the majority of representational capacity; the quantum layer acts as a nonlinear refinement stage.
 
-After training, you'll find in the output directory:
-- `checkpoints/best.pt` - Best model weights
-- `figures/` - Training curves, ROC curves, confusion matrices
-- `reports/` - Markdown and CSV evaluation reports
+---
 
-## 🧪 Example Usage
+## Intended Use
 
-### Python API
-```python
-from models.hybrid_model import HybridQMolNet
-from utils.smiles_to_graph import smiles_to_graph
-from utils.formatters import format_prediction_output
-import torch
+This repository is intended for:
 
-# Load model
-model = HybridQMolNet(node_feature_dim=145, n_qubits=8)
-model.load_state_dict(torch.load('outputs_bbbp/checkpoints/best.pt')['model_state_dict'])
-model.eval()
+* hybrid quantum–classical ML experimentation
+* educational use
+* hackathon and prototype demonstrations
+* architecture studies
 
-# Predict
-smiles = "CC(=O)Nc1ccc(O)cc1"  # Paracetamol
-graph = smiles_to_graph(smiles)
-from torch_geometric.data import Batch
-batch = Batch.from_data_list([graph])
+It is **not** intended for clinical or industrial drug discovery decisions.
 
-with torch.no_grad():
-    logits = model.forward_batch(batch)
-    prob = torch.softmax(logits, dim=1)[0, 1].item()
+---
 
-# Format output
-result = format_prediction_output(prob, task_type="bbbp", model_name="hybrid")
-print(f"{result['label']} ({result['confidence']} confidence)")
-```
-
-## ⚠️ Scientific Disclaimer
-
-This model provides computational predictions based on molecular structure analysis. Results are estimates and should not replace experimental validation. The hybrid quantum-classical approach is a research methodology; no claims of quantum advantage are made without rigorous benchmarking.
-
-## 📝 License
+## License
 
 MIT License
 
-## 🙏 Acknowledgments
-
-- PyTorch & PyTorch Geometric
-- PennyLane (Xanadu)
-- RDKit
-- Streamlit
