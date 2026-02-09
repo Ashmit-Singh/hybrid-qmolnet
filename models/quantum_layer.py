@@ -1,8 +1,15 @@
 """
-Variational Quantum Circuit Layer Module
+Optimized Variational Quantum Circuit Layer Module
 
-Implements a parameterized quantum circuit using PennyLane that can be
-integrated with PyTorch for end-to-end gradient-based training.
+PERFORMANCE OPTIMIZATIONS:
+1. QNode defined once at module init (not per forward)
+2. Device auto-selection (lightning.qubit preferred)
+3. Pre-scaled encoding (π multiplication outside circuit)
+4. Analytic mode (shots=None)
+5. Timing profiler hooks
+6. Micro-batching wrapper
+7. Fast profile mode (reduced qubits/layers)
+8. Cached tape execution where possible
 
 The circuit uses:
 - Angle encoding (RY) to embed classical features
@@ -10,112 +17,142 @@ The circuit uses:
 - Parameterized rotations (RX, RY, RZ) for expressibility
 - Pauli-Z expectation measurements for output
 
-Mathematical Foundation:
------------------------
-The quantum layer implements a variational ansatz:
-
-1. Feature Encoding: |ψ_0⟩ → Π_i RY(x_i) |0⟩^n
-   - Encodes n classical features into n qubit rotation angles
-   
-2. Variational Blocks: |ψ_k+1⟩ = U_ent · U_rot(θ_k) |ψ_k⟩
-   - U_ent: Layer of CNOT gates for entanglement
-   - U_rot: Parameterized single-qubit rotations RX, RY, RZ
-   
-3. Measurement: ⟨ψ_final| Z_i |ψ_final⟩ for each qubit
-   - Returns expectation values in [-1, 1]
-
-The circuit is differentiable via the parameter-shift rule:
+Gradients computed via parameter-shift rule:
 ∂f/∂θ = (1/2)[f(θ + π/2) - f(θ - π/2)]
 """
 
+import time
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
 import pennylane as qml
-from typing import Tuple, Optional, List, Callable
-import matplotlib.pyplot as plt
+from typing import Tuple, Optional, Dict, Any
+from functools import lru_cache
 
 
-def create_quantum_circuit(
-    n_qubits: int = 8,
-    n_layers: int = 3,
-    diff_method: str = 'parameter-shift',
-) -> Tuple[qml.QNode, qml.Device]:
+# =============================================================================
+# DEVICE AUTO-SELECTION
+# =============================================================================
+
+def get_best_device(n_qubits: int) -> Tuple[qml.Device, str]:
     """
-    Create a variational quantum circuit for classification.
+    Auto-select the fastest available PennyLane device.
     
-    The circuit architecture:
-    1. RY angle encoding layer (features → qubit rotations)
-    2. Multiple variational blocks:
-       - Entangling CNOT ring
-       - Parameterized RX, RY, RZ rotations on each qubit
-    3. Pauli-Z measurements on all qubits
+    Priority order:
+    1. lightning.gpu (if available and beneficial)
+    2. lightning.qubit (CPU optimized, ~2-5x faster)
+    3. default.qubit (fallback)
     
     Args:
-        n_qubits: Number of qubits (should match compressed embedding size)
-        n_layers: Number of variational layers (blocks of rotations + entanglement)
-        diff_method: Differentiation method ('parameter-shift' or 'backprop')
-    
+        n_qubits: Number of qubits needed
+        
     Returns:
-        Tuple of (quantum_node, device)
+        Tuple of (device, device_name)
     """
-    # Create quantum device (simulator)
+    # Try lightning.gpu first (CUDA acceleration)
+    try:
+        import pennylane_lightning
+        dev = qml.device('lightning.gpu', wires=n_qubits)
+        return dev, 'lightning.gpu'
+    except:
+        pass
+    
+    # Try lightning.qubit (CPU optimized C++ backend)
+    try:
+        dev = qml.device('lightning.qubit', wires=n_qubits)
+        return dev, 'lightning.qubit'
+    except:
+        pass
+    
+    # Fallback to default.qubit
     dev = qml.device('default.qubit', wires=n_qubits)
-    
-    @qml.qnode(dev, interface='torch', diff_method=diff_method)
-    def circuit(inputs: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
-        """
-        Execute the variational quantum circuit.
-        
-        Args:
-            inputs: Feature vector [n_qubits] to encode
-            weights: Variational parameters [n_layers, n_qubits, 3]
-        
-        Returns:
-            Expectation values [n_qubits]
-        """
-        # --- Feature Encoding Layer ---
-        # Apply RY rotations to encode classical features as quantum amplitudes
-        # RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩
-        # Features are scaled by π to span the full Bloch sphere
-        for i in range(n_qubits):
-            qml.RY(inputs[i] * np.pi, wires=i)
-        
-        # --- Variational Layers ---
-        for layer_idx in range(n_layers):
-            # Entanglement layer: CNOT ring connecting adjacent qubits
-            # Creates quantum correlations between qubits
-            for i in range(n_qubits):
-                qml.CNOT(wires=[i, (i + 1) % n_qubits])
-            
-            # Parameterized rotation layer
-            # RX, RY, RZ rotations provide expressibility
-            # Each qubit gets 3 independent rotation parameters
-            for i in range(n_qubits):
-                qml.RX(weights[layer_idx, i, 0], wires=i)
-                qml.RY(weights[layer_idx, i, 1], wires=i)
-                qml.RZ(weights[layer_idx, i, 2], wires=i)
-        
-        # --- Measurement ---
-        # Return expectation value of Pauli-Z on each qubit
-        # ⟨Z⟩ ∈ [-1, 1] representing quantum measurement outcome
-        return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
-    
-    return circuit, dev
+    return dev, 'default.qubit'
 
+
+# =============================================================================
+# TIMING PROFILER
+# =============================================================================
+
+class QuantumProfiler:
+    """Track quantum layer execution times."""
+    
+    def __init__(self):
+        self.forward_times = []
+        self.backward_times = []
+        self.batch_sizes = []
+        self._forward_start = None
+        self._backward_start = None
+        
+    def start_forward(self):
+        self._forward_start = time.perf_counter()
+        
+    def end_forward(self, batch_size: int = 1):
+        if self._forward_start:
+            elapsed = time.perf_counter() - self._forward_start
+            self.forward_times.append(elapsed)
+            self.batch_sizes.append(batch_size)
+            self._forward_start = None
+            
+    def start_backward(self):
+        self._backward_start = time.perf_counter()
+        
+    def end_backward(self):
+        if self._backward_start:
+            elapsed = time.perf_counter() - self._backward_start
+            self.backward_times.append(elapsed)
+            self._backward_start = None
+    
+    def get_stats(self) -> Dict[str, float]:
+        """Get timing statistics."""
+        stats = {}
+        if self.forward_times:
+            stats['forward_mean_ms'] = np.mean(self.forward_times) * 1000
+            stats['forward_total_s'] = np.sum(self.forward_times)
+            stats['samples_processed'] = sum(self.batch_sizes)
+            stats['ms_per_sample'] = (stats['forward_total_s'] * 1000) / max(1, stats['samples_processed'])
+        if self.backward_times:
+            stats['backward_mean_ms'] = np.mean(self.backward_times) * 1000
+            stats['backward_total_s'] = np.sum(self.backward_times)
+        return stats
+    
+    def reset(self):
+        self.forward_times = []
+        self.backward_times = []
+        self.batch_sizes = []
+        
+    def summary(self) -> str:
+        stats = self.get_stats()
+        if not stats:
+            return "No timing data collected"
+        lines = ["Quantum Layer Timing:"]
+        for k, v in stats.items():
+            lines.append(f"  {k}: {v:.2f}")
+        return "\n".join(lines)
+
+
+# Global profiler instance
+_profiler = QuantumProfiler()
+
+def get_profiler() -> QuantumProfiler:
+    return _profiler
+
+
+# =============================================================================
+# OPTIMIZED QUANTUM LAYER
+# =============================================================================
 
 class VariationalQuantumLayer(nn.Module):
     """
-    PyTorch module wrapping a variational quantum circuit.
+    Optimized PyTorch module wrapping a variational quantum circuit.
     
-    This layer:
-    - Accepts batched classical embeddings
-    - Encodes features using angle embedding
-    - Applies variational quantum operations
-    - Returns quantum expectation values
-    
-    Designed to be inserted between classical neural network layers
-    for hybrid quantum-classical learning.
+    Performance Features:
+    - QNode created once at init
+    - Device auto-selection
+    - Pre-scaled angle encoding
+    - Analytic expectation mode
+    - Timing hooks
+    - Optional fast profile mode
     """
     
     def __init__(
@@ -123,37 +160,116 @@ class VariationalQuantumLayer(nn.Module):
         n_qubits: int = 8,
         n_layers: int = 3,
         diff_method: str = 'parameter-shift',
+        fast_mode: bool = False,
+        device_name: Optional[str] = None,
+        enable_profiling: bool = True,
     ):
         """
-        Initialize the variational quantum layer.
+        Initialize the optimized variational quantum layer.
         
         Args:
             n_qubits: Number of qubits (input/output dimension)
             n_layers: Number of variational blocks
             diff_method: PennyLane differentiation method
+            fast_mode: If True, use reduced config (6 qubits, 2 layers)
+            device_name: Force specific device (None for auto-select)
+            enable_profiling: Track execution times
         """
         super().__init__()
+        
+        # Fast mode reduces circuit complexity
+        if fast_mode:
+            n_qubits = min(n_qubits, 6)
+            n_layers = min(n_layers, 2)
         
         self.n_qubits = n_qubits
         self.n_layers = n_layers
         self.diff_method = diff_method
+        self.fast_mode = fast_mode
+        self.enable_profiling = enable_profiling
         
-        # Create quantum circuit
-        self.circuit, self.device = create_quantum_circuit(
-            n_qubits, n_layers, diff_method
-        )
+        # Pre-compute pi constant as tensor
+        self.register_buffer('_pi', torch.tensor(np.pi, dtype=torch.float32))
+        
+        # Auto-select or use specified device
+        if device_name:
+            self.device = qml.device(device_name, wires=n_qubits)
+            self.device_name = device_name
+        else:
+            self.device, self.device_name = get_best_device(n_qubits)
+        
+        # Create quantum circuit ONCE at init
+        self.circuit = self._build_circuit()
         
         # Initialize variational parameters
         # Shape: [n_layers, n_qubits, 3] for RX, RY, RZ per qubit per layer
-        # Initialize with small random values near zero
         weight_shape = (n_layers, n_qubits, 3)
         self.weights = nn.Parameter(
-            torch.randn(weight_shape) * 0.1,
+            torch.randn(weight_shape, dtype=torch.float32) * 0.1,
             requires_grad=True
         )
         
-        # Count parameters
         self.n_params = self.weights.numel()
+        
+    def _build_circuit(self) -> qml.QNode:
+        """
+        Build the quantum circuit once.
+        
+        The circuit is defined here and reused for all forward passes.
+        This avoids the overhead of rebuilding the computational graph.
+        """
+        n_qubits = self.n_qubits
+        n_layers = self.n_layers
+        
+        @qml.qnode(
+            self.device, 
+            interface='torch', 
+            diff_method=self.diff_method,
+            # Caching optimization
+            cache=True if self.diff_method == 'parameter-shift' else False,
+        )
+        def circuit(encoded_inputs: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+            """
+            Execute the variational quantum circuit.
+            
+            Args:
+                encoded_inputs: PRE-SCALED feature vector [n_qubits] (already multiplied by π)
+                weights: Variational parameters [n_layers, n_qubits, 3]
+            
+            Returns:
+                Expectation values [n_qubits]
+            """
+            # --- Feature Encoding Layer ---
+            # Inputs are PRE-SCALED by π outside the circuit for efficiency
+            for i in range(n_qubits):
+                qml.RY(encoded_inputs[i], wires=i)
+            
+            # --- Variational Layers ---
+            for layer_idx in range(n_layers):
+                # Entanglement layer: CNOT ring
+                for i in range(n_qubits):
+                    qml.CNOT(wires=[i, (i + 1) % n_qubits])
+                
+                # Parameterized rotation layer
+                for i in range(n_qubits):
+                    qml.RX(weights[layer_idx, i, 0], wires=i)
+                    qml.RY(weights[layer_idx, i, 1], wires=i)
+                    qml.RZ(weights[layer_idx, i, 2], wires=i)
+            
+            # --- Measurement ---
+            return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
+        
+        return circuit
+    
+    def _encode_input(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Pre-encode input: normalize and scale by π.
+        
+        This is done OUTSIDE the circuit for efficiency.
+        """
+        # Normalize to [-1, 1] then scale by π
+        x_normalized = torch.tanh(x)
+        return x_normalized * self._pi
     
     def forward_single(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -165,25 +281,20 @@ class VariationalQuantumLayer(nn.Module):
         Returns:
             Quantum expectation values [n_qubits]
         """
-        # Normalize input to reasonable range for angle encoding
-        x_normalized = torch.tanh(x)  # Map to [-1, 1]
+        # Pre-encode (π scaling done here, not in circuit)
+        encoded = self._encode_input(x)
         
         # Run circuit
-        expectations = self.circuit(x_normalized, self.weights)
+        expectations = self.circuit(encoded, self.weights)
         
-        # PennyLane 0.28+ may return a tensor directly
+        # Handle output format
         if isinstance(expectations, torch.Tensor):
             return expectations.float()
-            
-        # Stack results into tensor
         return torch.stack(expectations).float()
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Process a batch of samples through the quantum circuit.
-        
-        Note: Quantum circuits are executed sequentially per sample.
-        This is a fundamental limitation of current quantum hardware/simulators.
         
         Args:
             x: Batched input features [batch_size, n_qubits]
@@ -191,35 +302,46 @@ class VariationalQuantumLayer(nn.Module):
         Returns:
             Quantum expectation values [batch_size, n_qubits]
         """
+        if self.enable_profiling:
+            _profiler.start_forward()
+        
         batch_size = x.shape[0]
+        
+        # Pre-encode all inputs at once (vectorized)
+        encoded_batch = self._encode_input(x)
+        
+        # Process samples (sequential - fundamental limitation)
         outputs = []
-        
         for i in range(batch_size):
-            out = self.forward_single(x[i])
-            outputs.append(out)
+            out = self.circuit(encoded_batch[i], self.weights)
+            if isinstance(out, torch.Tensor):
+                outputs.append(out.float())
+            else:
+                outputs.append(torch.stack(out).float())
         
-        return torch.stack(outputs)
+        result = torch.stack(outputs)
+        
+        if self.enable_profiling:
+            _profiler.end_forward(batch_size)
+        
+        return result
     
-    def get_circuit_info(self) -> dict:
-        """
-        Get information about the quantum circuit.
-        
-        Returns:
-            Dictionary with circuit specifications
-        """
+    def get_circuit_info(self) -> Dict[str, Any]:
+        """Get information about the quantum circuit."""
         return {
             'n_qubits': self.n_qubits,
             'n_layers': self.n_layers,
             'n_parameters': self.n_params,
             'diff_method': self.diff_method,
+            'device': self.device_name,
+            'fast_mode': self.fast_mode,
             'gate_count': {
                 'RY_encoding': self.n_qubits,
                 'CNOT_per_layer': self.n_qubits,
-                'RX_per_layer': self.n_qubits,
-                'RY_per_layer': self.n_qubits,
-                'RZ_per_layer': self.n_qubits,
+                'rotation_gates_per_layer': self.n_qubits * 3,
                 'total_gates': self.n_qubits + self.n_layers * (4 * self.n_qubits),
-            }
+            },
+            'gradient_evals_per_step': 2 * self.n_params,  # Parameter-shift cost
         }
     
     def __repr__(self) -> str:
@@ -228,48 +350,81 @@ class VariationalQuantumLayer(nn.Module):
             f"  n_qubits={self.n_qubits},\n"
             f"  n_layers={self.n_layers},\n"
             f"  n_parameters={self.n_params},\n"
-            f"  diff_method='{self.diff_method}'\n"
+            f"  device='{self.device_name}',\n"
+            f"  fast_mode={self.fast_mode}\n"
             f")"
         )
 
 
-def draw_quantum_circuit(
+# =============================================================================
+# MICRO-BATCH WRAPPER (for memory efficiency)
+# =============================================================================
+
+class MicroBatchQuantumLayer(nn.Module):
+    """
+    Wrapper that processes large batches in smaller micro-batches.
+    
+    Useful for:
+    - Reducing peak memory usage
+    - More consistent execution times
+    - Better debugging
+    """
+    
+    def __init__(
+        self,
+        quantum_layer: VariationalQuantumLayer,
+        micro_batch_size: int = 8,
+    ):
+        super().__init__()
+        self.quantum_layer = quantum_layer
+        self.micro_batch_size = micro_batch_size
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size = x.shape[0]
+        
+        if batch_size <= self.micro_batch_size:
+            return self.quantum_layer(x)
+        
+        # Process in chunks
+        outputs = []
+        for i in range(0, batch_size, self.micro_batch_size):
+            chunk = x[i:i + self.micro_batch_size]
+            out = self.quantum_layer(chunk)
+            outputs.append(out)
+        
+        return torch.cat(outputs, dim=0)
+
+
+# =============================================================================
+# LEGACY COMPATIBILITY
+# =============================================================================
+
+def create_quantum_circuit(
     n_qubits: int = 8,
     n_layers: int = 3,
-    save_path: Optional[str] = None,
-    figsize: Tuple[int, int] = (16, 8),
-) -> plt.Figure:
+    diff_method: str = 'parameter-shift',
+) -> Tuple[qml.QNode, qml.Device]:
     """
-    Draw and visualize the quantum circuit architecture.
+    Legacy function for backward compatibility.
     
-    Creates a visual representation of the variational quantum circuit
-    showing the encoding and variational layers.
-    
-    Args:
-        n_qubits: Number of qubits
-        n_layers: Number of variational layers
-        save_path: Optional path to save the figure
-        figsize: Figure size
-    
-    Returns:
-        Matplotlib figure
+    Prefer using VariationalQuantumLayer directly.
     """
-    # Create a minimal circuit for visualization
-    dev = qml.device('default.qubit', wires=n_qubits)
+    warnings.warn(
+        "create_quantum_circuit is deprecated. Use VariationalQuantumLayer instead.",
+        DeprecationWarning
+    )
     
-    @qml.qnode(dev)
-    def visualization_circuit(inputs, weights):
-        # Encoding layer
+    dev, _ = get_best_device(n_qubits)
+    
+    @qml.qnode(dev, interface='torch', diff_method=diff_method)
+    def circuit(inputs: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         for i in range(n_qubits):
-            qml.RY(inputs[i], wires=i)
+            qml.RY(inputs[i] * np.pi, wires=i)
         
-        # Variational layers
         for layer_idx in range(n_layers):
-            # Entanglement
             for i in range(n_qubits):
                 qml.CNOT(wires=[i, (i + 1) % n_qubits])
             
-            # Rotations
             for i in range(n_qubits):
                 qml.RX(weights[layer_idx, i, 0], wires=i)
                 qml.RY(weights[layer_idx, i, 1], wires=i)
@@ -277,93 +432,140 @@ def draw_quantum_circuit(
         
         return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
     
-    # Create dummy inputs
-    inputs = np.zeros(n_qubits)
-    weights = np.zeros((n_layers, n_qubits, 3))
+    return circuit, dev
+
+
+# =============================================================================
+# DRAWING UTILITIES
+# =============================================================================
+
+def draw_quantum_circuit(
+    n_qubits: int = 8,
+    n_layers: int = 3,
+    save_path: Optional[str] = None,
+) -> str:
+    """
+    Generate ASCII circuit diagram.
     
-    # Draw the circuit
-    fig, ax = qml.draw_mpl(visualization_circuit)(inputs, weights)
-    fig.set_size_inches(figsize)
-    ax.set_title(f"Variational Quantum Circuit ({n_qubits} qubits, {n_layers} layers)", fontsize=14)
-    
-    if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Circuit diagram saved to {save_path}")
-    
-    return fig
+    Returns text representation for console output.
+    """
+    try:
+        from visualization.circuit_viz import get_circuit_ascii
+        return get_circuit_ascii(n_qubits, n_layers)
+    except ImportError:
+        return f"Circuit: {n_qubits} qubits, {n_layers} layers"
 
 
 def print_quantum_layer_summary(layer: VariationalQuantumLayer) -> None:
-    """
-    Print a detailed summary of the quantum layer.
-    
-    Args:
-        layer: VariationalQuantumLayer instance
-    """
+    """Print a detailed summary of the quantum layer."""
     info = layer.get_circuit_info()
     
     print("\n" + "="*60)
-    print("Variational Quantum Layer Summary")
+    print("Optimized Variational Quantum Layer")
     print("="*60)
-    print(f"\nQuantum System:")
-    print(f"  Number of qubits:       {info['n_qubits']}")
+    print(f"\nConfiguration:")
+    print(f"  Qubits:                 {info['n_qubits']}")
     print(f"  Variational layers:     {info['n_layers']}")
     print(f"  Trainable parameters:   {info['n_parameters']}")
-    print(f"  Differentiation method: {info['diff_method']}")
-    
-    print(f"\nGate Counts:")
-    gates = info['gate_count']
-    print(f"  RY encoding gates:      {gates['RY_encoding']}")
-    print(f"  CNOT gates per layer:   {gates['CNOT_per_layer']}")
-    print(f"  RX gates per layer:     {gates['RX_per_layer']}")
-    print(f"  RY gates per layer:     {gates['RY_per_layer']}")
-    print(f"  RZ gates per layer:     {gates['RZ_per_layer']}")
-    print(f"  Total gates:            {gates['total_gates']}")
-    
-    print(f"\nCircuit Depth Analysis:")
-    depth_per_layer = 1 + 3  # CNOT ring + 3 rotations
-    total_depth = 1 + info['n_layers'] * depth_per_layer  # encoding + layers
-    print(f"  Encoding depth:         1")
-    print(f"  Depth per var. layer:   {depth_per_layer}")
-    print(f"  Total circuit depth:    ~{total_depth}")
+    print(f"  Device:                 {info['device']}")
+    print(f"  Fast mode:              {info['fast_mode']}")
+    print(f"  Diff method:            {info['diff_method']}")
+    print(f"\nGate count:               {info['gate_count']['total_gates']}")
+    print(f"Gradient evals/step:      {info['gradient_evals_per_step']}")
     print("="*60 + "\n")
 
 
-if __name__ == "__main__":
-    # Demo and testing
-    print("Creating Variational Quantum Layer...")
+# =============================================================================
+# VALIDATION TESTS
+# =============================================================================
+
+def validate_layer(layer: VariationalQuantumLayer, tolerance: float = 1e-4) -> bool:
+    """
+    Validate that the layer produces correct outputs and gradients.
     
-    # Initialize layer
-    vql = VariationalQuantumLayer(
-        n_qubits=8,
-        n_layers=3,
-        diff_method='parameter-shift'
-    )
+    Returns True if all tests pass.
+    """
+    print("Running validation tests...")
     
-    # Print summary
-    print_quantum_layer_summary(vql)
+    # Test 1: Forward pass output shape
+    x = torch.randn(2, layer.n_qubits)
+    out = layer(x)
+    assert out.shape == (2, layer.n_qubits), f"Shape mismatch: {out.shape}"
+    print("  ✓ Output shape correct")
     
-    # Test forward pass
-    batch_size = 4
-    x = torch.randn(batch_size, 8)
+    # Test 2: Output range (expectation values in [-1, 1])
+    assert out.min() >= -1.0 - tolerance, f"Output below -1: {out.min()}"
+    assert out.max() <= 1.0 + tolerance, f"Output above 1: {out.max()}"
+    print("  ✓ Output range correct [-1, 1]")
     
-    print(f"Input shape: {x.shape}")
-    
-    # Forward pass
-    with torch.no_grad():
-        output = vql(x)
-    
-    print(f"Output shape: {output.shape}")
-    print(f"Output range: [{output.min():.3f}, {output.max():.3f}]")
-    print(f"Expected range: [-1, 1] (Pauli-Z expectation values)\n")
-    
-    # Test gradient computation
-    print("Testing gradient computation...")
-    x_grad = torch.randn(2, 8, requires_grad=True)
-    output = vql(x_grad)
-    loss = output.sum()
+    # Test 3: Gradients exist and are non-zero
+    x.requires_grad = True
+    out = layer(x)
+    loss = out.sum()
     loss.backward()
     
-    print(f"Gradient computation successful!")
-    print(f"Weight gradient shape: {vql.weights.grad.shape}")
-    print(f"Weight gradient norm: {vql.weights.grad.norm():.4f}")
+    assert layer.weights.grad is not None, "No gradient computed"
+    assert layer.weights.grad.abs().sum() > 0, "Gradient is all zeros"
+    print("  ✓ Gradients computed and non-zero")
+    
+    # Test 4: Deterministic output (same input = same output)
+    layer.eval()
+    with torch.no_grad():
+        x_test = torch.randn(1, layer.n_qubits)
+        out1 = layer(x_test)
+        out2 = layer(x_test)
+        diff = (out1 - out2).abs().max()
+        assert diff < tolerance, f"Non-deterministic output: {diff}"
+    print("  ✓ Deterministic outputs")
+    
+    print("All validation tests passed!")
+    return True
+
+
+# =============================================================================
+# MAIN / DEMO
+# =============================================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    print("="*60)
+    print("Optimized Quantum Layer Benchmark")
+    print("="*60)
+    
+    # Parse fast mode flag
+    fast_mode = '--fast_quantum' in sys.argv or '--fast' in sys.argv
+    
+    # Create layer
+    layer = VariationalQuantumLayer(
+        n_qubits=8,
+        n_layers=3,
+        fast_mode=fast_mode,
+        enable_profiling=True,
+    )
+    
+    print_quantum_layer_summary(layer)
+    
+    # Validate
+    validate_layer(layer)
+    
+    # Benchmark
+    print("\nBenchmarking forward pass...")
+    batch_sizes = [1, 4, 8]
+    
+    for bs in batch_sizes:
+        x = torch.randn(bs, layer.n_qubits)
+        
+        # Warmup
+        _ = layer(x)
+        
+        # Timed run
+        get_profiler().reset()
+        start = time.perf_counter()
+        for _ in range(3):
+            _ = layer(x)
+        elapsed = (time.perf_counter() - start) / 3
+        
+        print(f"  Batch size {bs}: {elapsed*1000:.1f} ms ({elapsed*1000/bs:.1f} ms/sample)")
+    
+    print("\n" + get_profiler().summary())

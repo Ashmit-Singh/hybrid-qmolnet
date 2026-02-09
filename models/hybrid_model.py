@@ -43,6 +43,7 @@ class HybridQMolNet(nn.Module):
         num_classes: int = 2,
         dropout: float = 0.2,
         use_quantum: bool = True,
+        fast_quantum: bool = False,
     ):
         """
         Initialize the hybrid model.
@@ -57,6 +58,7 @@ class HybridQMolNet(nn.Module):
             num_classes: Number of output classes
             dropout: Dropout rate
             use_quantum: Whether to use quantum layer (for ablation)
+            fast_quantum: Use optimized fast mode (reduced qubits/layers)
         """
         super().__init__()
         
@@ -91,6 +93,7 @@ class HybridQMolNet(nn.Module):
                 n_qubits=n_qubits,
                 n_layers=quantum_layers,
                 diff_method='parameter-shift',
+                fast_mode=fast_quantum,
             )
             
             # --- Classifier Head ---
